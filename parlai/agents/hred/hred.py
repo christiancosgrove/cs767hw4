@@ -359,5 +359,149 @@ def main():
         test_dataloader = DataLoader(test_dataset, options.bt_siz, shuffle=True, num_workers=2, collate_fn=custom_collate_fn)
         # inference_beam(test_dataloader, model, inv_dict, options)
         uniq_answer(options.name)
-if __name__ == "__main__":
-    main()
+
+
+
+
+
+class HREDAgent(TorchGeneratorAgent):
+    @classmethod
+    def add_cmdline_args(cls, argparser):
+        """
+        Add command-line arguments specifically for this agent.
+        """
+        agent = argparser.add_argument_group('HRED Arguments')
+        agent.add_argument('-n', dest='name', help='enter suffix for model files', required=True)
+        agent.add_argument('-e', dest='epoch', type=int, default=20, help='number of epochs')
+        agent.add_argument('-pt', dest='patience', type=int, default=-1, help='validtion patience for early stopping default none')
+        agent.add_argument('-tc', dest='teacher', action='store_true', default=False, help='default teacher forcing')
+        agent.add_argument('-bi', dest='bidi', action='store_true', default=False, help='bidirectional enc/decs')
+        agent.add_argument('-test', dest='test', action='store_true', default=False, help='only test or inference')
+        agent.add_argument('-shrd_dec_emb', dest='shrd_dec_emb', action='store_true', default=False, help='shared embedding in/out for decoder')
+        agent.add_argument('-btstrp', dest='btstrp', default=None, help='bootstrap/load parameters give name')
+        agent.add_argument('-lm', dest='lm', action='store_true', default=False, help='enable a RNN language model joint training as well')
+        agent.add_argument('-toy', dest='toy', action='store_true', default=False, help='loads only 1000 training and 100 valid for testing')
+        agent.add_argument('-pretty', dest='pretty', action='store_true', default=False, help='pretty print inference')
+        agent.add_argument('-mmi', dest='mmi', action='store_true', default=False, help='Using the mmi anti-lm for ranking beam')
+        agent.add_argument('-drp', dest='drp', type=float, default=0.3, help='dropout probability used all throughout')
+        agent.add_argument('-nl', dest='num_lyr', type=int, default=1, help='number of enc/dec layers(same for both)')
+        agent.add_argument('-lr', dest='lr', type=float, default=0.001, help='learning rate for optimizer')
+        agent.add_argument('-bs', dest='bt_siz', type=int, default=100, help='batch size')
+        agent.add_argument('-bms', dest='beam', type=int, default=1, help='beam size for decoding')
+        agent.add_argument('-vsz', dest='vocab_size', type=int, default=10004, help='size of vocabulary')
+        agent.add_argument('-esz', dest='emb_size', type=int, default=300, help='embedding size enc/dec same')
+        agent.add_argument('-uthid', dest='ut_hid_size', type=int, default=600, help='encoder utterance hidden state')
+        agent.add_argument('-seshid', dest='ses_hid_size', type=int, default=1200, help='encoder session hidden state')
+        agent.add_argument('-dechid', dest='dec_hid_size', type=int, default=600, help='decoder hidden state')
+        super(HREDAgent, cls).add_cmdline_args(argparser)
+        return agent
+
+    @staticmethod
+    def model_version():
+        """
+        Return current version of this model, counting up from 0.
+
+        Models may not be backwards-compatible with older versions. Version 1 split from
+        version 0 on Aug 29, 2018. Version 2 split from version 1 on Nov 13, 2018 To use
+        version 0, use --model legacy:seq2seq:0 To use version 1, use --model
+        legacy:seq2seq:1 (legacy agent code is located in parlai/agents/legacy_agents).
+        """
+        return 2
+
+    def __init__(self, opt, shared=None):
+        """
+        Set up model.
+        """
+        super().__init__(opt, shared)
+        self.id = 'HRED'
+
+    def build_model(self, states=None):
+        """
+        Initialize model, override to change model setup.
+        """
+        opt = self.opt
+        if not states:
+            states = {}
+
+        model = Seq2Seq(opt)
+        if opt.get('dict_tokenizer') == 'bpe' and opt['embedding_type'] != 'random':
+            print('skipping preinitialization of embeddings for bpe')
+        elif not states and opt['embedding_type'] != 'random':
+            # `not states`: only set up embeddings if not loading model
+            self._copy_embeddings(model.decoder.lt.weight, opt['embedding_type'])
+            if opt['lookuptable'] in ['unique', 'dec_out']:
+                # also set encoder lt, since it's not shared
+                self._copy_embeddings(
+                    model.encoder.lt.weight, opt['embedding_type'], log=False
+                )
+
+        if states:
+            # set loaded states if applicable
+            model.load_state_dict(states['model'])
+
+        if opt['embedding_type'].endswith('fixed'):
+            print('Seq2seq: fixing embedding weights.')
+            model.decoder.lt.weight.requires_grad = False
+            model.encoder.lt.weight.requires_grad = False
+            if opt['lookuptable'] in ['dec_out', 'all']:
+                model.output.weight.requires_grad = False
+
+        return model
+
+    def build_criterion(self):
+        # set up criteria
+        if self.opt.get('numsoftmax', 1) > 1:
+            return nn.NLLLoss(ignore_index=self.NULL_IDX, reduction='none')
+        else:
+            return nn.CrossEntropyLoss(ignore_index=self.NULL_IDX, reduction='none')
+
+    def batchify(self, *args, **kwargs):
+        """
+        Override batchify options for seq2seq.
+        """
+        kwargs['sort'] = True  # need sorted for pack_padded
+        return super().batchify(*args, **kwargs)
+
+    def state_dict(self):
+        """
+        Get the model states for saving.
+
+        Overriden to include longest_label
+        """
+        states = super().state_dict()
+        if hasattr(self.model, 'module'):
+            states['longest_label'] = self.model.module.longest_label
+        else:
+            states['longest_label'] = self.model.longest_label
+
+        return states
+
+    def load(self, path):
+        """
+        Return opt and model states.
+        """
+        states = torch.load(path, map_location=lambda cpu, _: cpu)
+        # set loaded states if applicable
+        self.model.load_state_dict(states['model'])
+        if 'longest_label' in states:
+            self.model.longest_label = states['longest_label']
+        return states
+
+    def is_valid(self, obs):
+        normally_valid = super().is_valid(obs)
+        if not normally_valid:
+            # shortcut boolean evaluation
+            return normally_valid
+        contains_empties = obs['text_vec'].shape[0] == 0
+        if self.is_training and contains_empties:
+            warn_once(
+                'seq2seq got an empty input sequence (text_vec) during training. '
+                'Skipping this example, but you should check your dataset and '
+                'preprocessing.'
+            )
+        elif not self.is_training and contains_empties:
+            warn_once(
+                'seq2seq got an empty input sequence (text_vec) in an '
+                'evaluation example! This may affect your metrics!'
+            )
+        return not contains_empties
