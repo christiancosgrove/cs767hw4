@@ -17,32 +17,30 @@ Task 3: Dialogs discussing questions about movies as well as recommendations.
 
 Task 4: Dialogs discussing Movies from Reddit (the /r/movies SubReddit).
 """
-from parlai.core.teachers import FbDialogTeacher, MultiTaskTeacher
+from parlai.core.teachers import DialogTeacher
 from .build import build
 
 import copy
 import os
 import pickle
+from tqdm import tqdm
 
 
-def _path(opt, filtered):
+def _path(opt):
     # build the data if it does not exist
     build(opt)
 
     # set up path to data (specific to each dataset)
     dt = opt['datatype'].split(':')[0]
-    return os.path.join(opt['datapath'], 'Twitter', dt + '.txt')
+    return os.path.join(opt['datapath'], 'MovieTriples_Dataset.tar')
 
-class MnistQATeacher(DialogTeacher):
+class MovieTriplesTeacher(DialogTeacher):
     def __init__(self, opt, shared=None):
-        # store datatype
-        self.datatype = opt['datatype'].split(':')[0]
-
         # store identifier for the teacher in the dialog
-        self.id = 'mnist_qa'
+        self.id = 'movie_triples'
 
         # store paths to images and labels
-        opt['datafile'], self.image_path = _path(opt)
+        opt['datafile'] = _path(opt)
 
         super().__init__(opt, shared)
     def setup_data(self, path):
@@ -50,20 +48,25 @@ class MnistQATeacher(DialogTeacher):
 
         # open data file with labels
         # (path will be provided to setup_data from opt['datafile'] defined above)
-        with open(path) as data_file:
-            self.data = pickle.load(data_file)
+        with open(os.path.join(path, 'Training.triples.pkl'), 'rb') as data_file:
+            self.triples = pickle.load(data_file)
+        with open(os.path.join(path, 'Training.dict.pkl'), 'rb') as data_file:
+            self.dictionary = pickle.load(data_file)
 
+        # Token to split different utterances
+        dict_map = {i : word for word, i, _, _ in self.dictionary }
+        split_token = next(v[1] for v in self.dictionary if v[0] == '</s>')
         # every episode consists of only one query in this task
         new_episode = True
-
         # define iterator over all queries
-        for i in range(len(self.data)):
+        for i in tqdm(range(len(self.triples))):
+            trip_mapped = ''.join(dict_map[w] for w in self.triples[i])
 
-            split = self.data[i][::-1].index(0)
-            question = self.data[i][:-(split + 1)]
-            label = self.data[i][split:]
+            split = trip_mapped.split('</s>')
+            question = ''.join(split[:2])
+            label = split[2]
             # yield tuple with information and new_episode? flag (always True)
-            yield (question, label, None, None, i), new_episode
+            yield (question, [label], None, None), new_episode
         
-class DefaultTeacher(MnistQATeacher):
+class DefaultTeacher(MovieTriplesTeacher):
     pass

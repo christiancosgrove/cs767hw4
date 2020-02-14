@@ -10,6 +10,7 @@ use_cuda = torch.cuda.is_available()
 
 
 def custom_collate_fn(batch):
+    print(batch)
     # input is a list of dialogturn objects
     bt_siz = len(batch)
     # sequence length only affects the memory requirement, otherwise longer is better

@@ -28,7 +28,9 @@ class Seq2Seq(nn.Module):
         self.ses_enc = SessionEncoder(options.ses_hid_size, options.ut_hid_size, options)
         self.dec = Decoder(options)
         
-    def forward(self, sample_batch):
+    def forward(self, sample_batch, ys):
+        print('SAMP', sample_batch.shape)
+        
         u1, u1_lens, u2, u2_lens, u3, u3_lens = sample_batch[0], sample_batch[1], sample_batch[2], \
         sample_batch[3], sample_batch[4], sample_batch[5]
         if use_cuda:

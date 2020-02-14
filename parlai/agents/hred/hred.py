@@ -4,10 +4,13 @@ import time
 import torch.nn.init as init
 import torch.optim as optim
 from torch.utils.data import DataLoader
+from parlai.core.torch_generator_agent import TorchGeneratorAgent
+from parlai.utils.misc import warn_once
 
-from modules import *
-from util import *
-from collections import Counter
+from .modules import *
+from .util import *
+from collections import Counter, namedtuple
+
 
 use_cuda = torch.cuda.is_available()
 torch.manual_seed(123)
@@ -364,14 +367,13 @@ def main():
 
 
 
-class HREDAgent(TorchGeneratorAgent):
+class HredAgent(TorchGeneratorAgent):
     @classmethod
     def add_cmdline_args(cls, argparser):
         """
         Add command-line arguments specifically for this agent.
         """
         agent = argparser.add_argument_group('HRED Arguments')
-        agent.add_argument('-n', dest='name', help='enter suffix for model files', required=True)
         agent.add_argument('-e', dest='epoch', type=int, default=20, help='number of epochs')
         agent.add_argument('-pt', dest='patience', type=int, default=-1, help='validtion patience for early stopping default none')
         agent.add_argument('-tc', dest='teacher', action='store_true', default=False, help='default teacher forcing')
@@ -393,7 +395,7 @@ class HREDAgent(TorchGeneratorAgent):
         agent.add_argument('-uthid', dest='ut_hid_size', type=int, default=600, help='encoder utterance hidden state')
         agent.add_argument('-seshid', dest='ses_hid_size', type=int, default=1200, help='encoder session hidden state')
         agent.add_argument('-dechid', dest='dec_hid_size', type=int, default=600, help='decoder hidden state')
-        super(HREDAgent, cls).add_cmdline_args(argparser)
+        super(HredAgent, cls).add_cmdline_args(argparser)
         return agent
 
     @staticmethod
@@ -422,8 +424,9 @@ class HREDAgent(TorchGeneratorAgent):
         opt = self.opt
         if not states:
             states = {}
-
-        model = Seq2Seq(opt)
+        options_type = namedtuple('Options', ' '.join(list(opt.keys())))
+        model = Seq2Seq(options_type(**opt))
+        
         if opt.get('dict_tokenizer') == 'bpe' and opt['embedding_type'] != 'random':
             print('skipping preinitialization of embeddings for bpe')
         elif not states and opt['embedding_type'] != 'random':
