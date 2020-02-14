@@ -61,12 +61,11 @@ class MovieTriplesTeacher(DialogTeacher):
         # define iterator over all queries
         for i in tqdm(range(len(self.triples))):
             trip_mapped = ''.join(dict_map[w] for w in self.triples[i])
-
             split = trip_mapped.split('</s>')
             question = ''.join(split[:2])
             label = split[2]
             # yield tuple with information and new_episode? flag (always True)
-            yield (question, [label], None, None), new_episode
+            yield (trip_mapped, None, None, None), new_episode
         
 class DefaultTeacher(MovieTriplesTeacher):
     pass
