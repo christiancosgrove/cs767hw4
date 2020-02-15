@@ -346,7 +346,7 @@ def main():
     options = get_args()
     print(options)
 
-    model = Seq2Seq(options)
+    model = HRED(options)
     if use_cuda:
         model.cuda()
 
@@ -395,6 +395,7 @@ class HredAgent(TorchGeneratorAgent):
         agent.add_argument('-uthid', dest='ut_hid_size', type=int, default=600, help='encoder utterance hidden state')
         agent.add_argument('-seshid', dest='ses_hid_size', type=int, default=1200, help='encoder session hidden state')
         agent.add_argument('-dechid', dest='dec_hid_size', type=int, default=600, help='decoder hidden state')
+        
         super(HredAgent, cls).add_cmdline_args(argparser)
         return agent
 
@@ -425,7 +426,7 @@ class HredAgent(TorchGeneratorAgent):
         if not states:
             states = {}
         options_type = namedtuple('Options', ' '.join(list(opt.keys())))
-        model = Seq2Seq(options_type(**opt))
+        model = HRED(options_type(**opt))
         
         if opt.get('dict_tokenizer') == 'bpe' and opt['embedding_type'] != 'random':
             print('skipping preinitialization of embeddings for bpe')
@@ -463,7 +464,22 @@ class HredAgent(TorchGeneratorAgent):
         Override batchify options for seq2seq.
         """
         kwargs['sort'] = True  # need sorted for pack_padded
-        return super().batchify(*args, **kwargs)
+        b = super().batchify(*args, **kwargs)
+        tvec = self.history.history_vecs[-1]
+        indices = [i for i, x in enumerate(tvec) if x == self.dict['</s>']]
+        b['u1'] = tvec[1:indices[0]]
+        b['u2'] = tvec[indices[0]+2:indices[1]]
+        b['u3'] = tvec[indices[1]+2:indices[2]]
+
+        return b
+
+    
+    def _set_text_vec(self, obs, history, truncate):
+        print('OBS', obs, history)
+        return super()._set_text_vec(obs, history, truncate)
+        
+    def _model_input(self, batch):
+        return (batch,)
 
     def state_dict(self):
         """

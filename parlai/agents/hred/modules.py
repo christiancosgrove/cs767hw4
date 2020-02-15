@@ -24,17 +24,19 @@ def max_out(x):
 class HRED(nn.Module):
     def __init__(self, options):
         super(HRED, self).__init__()
+        print('INIT')
         self.encoder = BaseEncoder(options.vocab_size, options.emb_size, options.ut_hid_size, options)
         self.ses_enc = SessionEncoder(options.ses_hid_size, options.ut_hid_size, options)
         self.decoder = Decoder(options)
+        print('DONE INIT')
         
-    def forward(self, sample_batch, ys):
-        print('SAMP', sample_batch.shape)
-
-        
-        
-        u1, u1_lens, u2, u2_lens, u3, u3_lens = sample_batch[0], sample_batch[1], sample_batch[2], \
-        sample_batch[3], sample_batch[4], sample_batch[5]
+    def forward(self, batch):
+        u1 = batch.u1
+        print('u1 shape', u1.shape)
+        u2 = batch.u2
+        u3 = batch.u3
+        # u1, u1_lens, u2, u2_lens, u3, u3_lens = sample_batch[0], sample_batch[1], sample_batch[2], \
+        # sample_batch[3], sample_batch[4], sample_batch[5]
         if use_cuda:
             u1 = u1.cuda()
             u2 = u2.cuda()

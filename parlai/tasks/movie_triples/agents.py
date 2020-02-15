@@ -55,16 +55,19 @@ class MovieTriplesTeacher(DialogTeacher):
 
         # Token to split different utterances
         dict_map = {i : word for word, i, _, _ in self.dictionary }
+
         split_token = next(v[1] for v in self.dictionary if v[0] == '</s>')
         # every episode consists of only one query in this task
         new_episode = True
         # define iterator over all queries
         for i in tqdm(range(len(self.triples))):
-            trip_mapped = ''.join(dict_map[w] for w in self.triples[i])
-            split = trip_mapped.split('</s>')
-            question = ''.join(split[:2])
-            label = split[2]
+
+            trip_mapped = ' '.join(dict_map[w] for w in self.triples[i])
+            # split = trip_mapped.split('</s>')
+            # question = ''.join(split[:2])
+            # label = split[2]
             # yield tuple with information and new_episode? flag (always True)
+            # print('Mapped ', trip_mapped)
             yield (trip_mapped, None, None, None), new_episode
         
 class DefaultTeacher(MovieTriplesTeacher):
