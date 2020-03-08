@@ -125,6 +125,23 @@ class Task10kTeacher(HalfTeacher):
                 break
 
 
+class TaskDialoGPTFiltering(HalfTeacher):
+    """
+    This version of opensubtitles only includes 10,000 dialogs.
+    """
+
+    def setup_data(self, path):
+        cnt = 0
+        for entry, new in super().setup_data(path):
+            print('entry', entry)
+            if len(entry) > 1 and entry[1]:
+                # focus on examples with targets for small set
+                yield entry, new
+            cnt += 1
+            if cnt >= 10000:
+                break
+
+
 class V2009Teacher(FullTeacher):
     def __init__(self, opt, shared=None):
         super(V2009Teacher, self).__init__(opt, shared, '2009', True)
