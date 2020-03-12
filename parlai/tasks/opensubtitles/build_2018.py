@@ -269,6 +269,9 @@ class DataProcessor(object):
                 # TODO: We possibly can log these errors,
                 # but I'm not sure how it would intervene with the PrograssLogger
                 pass
+            except OSError:
+                print('OSError')
+                pass
             except Exception:
                 print(
                     'Unexpected error for file %s:\n%s' % (filepath, sys.exc_info()[0]),
@@ -288,6 +291,7 @@ def create_fb_format(inpath, outpath, use_history):
     ftest = open(os.path.join(outpath, 'test.txt'), 'w')
 
     movie_dirs = get_list_of_files(inpath)
+    print('got movie dirs')
     total_movie_dirs = len(movie_dirs)
     total_files = sum([len(l) for l in movie_dirs.values()])
     print(
