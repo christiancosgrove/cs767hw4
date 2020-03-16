@@ -601,7 +601,7 @@ class TorchGeneratorAgent(TorchAgent, ABC):
                     'if this happens frequently, decrease batchsize or '
                     'truncate the inputs to the model.'
                 )
-                self.global_metrics.update('skipped_batches', SumMetric(1))
+                self.global_metrics.add('skipped_batches', SumMetric(1))
                 # gradients are synced on backward, now this model is going to be
                 # out of sync! catch up with the other workers
                 self._init_cuda_buffer(8, 8, True)
@@ -1355,3 +1355,110 @@ class NucleusSampling(TreeSearch):
         scores = sprobs[hyp_ids, choices].log()
         best_scores = prior_scores.expand_as(scores) + scores
         return (hyp_ids, tok_ids, best_scores)
+
+
+from parlai.agents.transformer.transformer import TransformerGeneratorModel
+
+class MMISearch(TreeSearch): # TODO: allow custom reverse models. Right now the reverse model is hardcoded as a pretrained Transformer.
+    """
+    MMI search.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        opt = Opt(model_file='HARDCODE')
+        self.rev_dict = DictionaryAgent()
+        self.rev_dict.load('reversed.dict')
+        self.reverse_model = TransformerGeneratorModel(opt, self.rev_dict)
+
+    def select_paths(self, logprobs, prior_scores):
+        """
+        Select the next vocabulary item in these beams.
+        """
+        # if numel is 1, then this is the first time step, only one hyp is expanded
+        if prior_scores.numel() == 1:
+            logprobs = logprobs[0:1]
+
+        # beam search actually looks over all hypotheses together so we flatten
+        beam_scores = logprobs + prior_scores.unsqueeze(1).expand_as(logprobs)
+        flat_beam_scores = beam_scores.view(-1)
+        best_scores, best_idxs = torch.topk(flat_beam_scores, self.beam_size, dim=-1)
+        voc_size = logprobs.size(-1)
+
+        # get the backtracking hypothesis id as a multiple of full voc_sizes
+        hyp_ids = best_idxs / voc_size
+        # get the actual word id from residual of the same division
+        tok_ids = best_idxs % voc_size
+
+        return (hyp_ids, tok_ids, best_scores)
+
+
+    def get_rescored_finished(self, n_best=None):
+        """
+        Return finished hypotheses according to adjusted scores.
+
+        Score adjustment is done according to the Google NMT paper, which
+        penalizes long utterances.
+
+        :param n_best:
+            number of finalized hypotheses to return
+
+        :return:
+            list of (tokens, score) pairs, in sorted order, where:
+              - tokens is a tensor of token ids
+              - score is the adjusted log probability of the entire utterance
+        """
+
+        # Rerank here
+
+        # self.reverse_model(self.outputs[...], self.context)
+
+        # if we never actually finished, force one
+        if not self.finished:
+            self.outputs[-1][0] = self.eos
+            self.finished.append(
+                _HypothesisTail(
+                    timestep=len(self.outputs) - 1,
+                    hypid=0,
+                    score=self.all_scores[-1][0],
+                    tokenid=self.outputs[-1][0],
+                )
+            )
+
+        rescored_finished = []
+        for finished_item in self.finished:
+            current_length = finished_item.timestep + 1
+            # these weights are from Google NMT paper
+            length_penalty = math.pow((1 + current_length) / 6, self.length_penalty)
+            rescored_finished.append(
+                _HypothesisTail(
+                    timestep=finished_item.timestep,
+                    hypid=finished_item.hypid,
+                    score=finished_item.score / length_penalty,
+                    tokenid=finished_item.tokenid,
+                )
+            )
+
+        # Note: beam size is almost always pretty small, so sorting is cheap enough
+        srted = sorted(rescored_finished, key=attrgetter('score'), reverse=True)
+
+        if n_best is not None:
+            srted = srted[:n_best]
+
+        n_best_list = [
+            (self._get_pretty_hypothesis(self._get_hyp_from_finished(hyp)), hyp.score)
+            for hyp in srted
+        ]
+
+        # check that there is at least one finished candidate
+        # and assert that each of them contains only one EOS
+        assert (
+            len(n_best_list) >= 1
+        ), f'TreeSearch returned {len(n_best_list)} candidates, must be >= 1'
+        for (pred, score) in n_best_list:
+            assert (
+                pred == self.eos
+            ).sum() == 1, f'TreeSearch returned a finalized hypo with multiple end tokens \
+            with score {score.item():.2f}'
+
+        return n_best_list

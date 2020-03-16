@@ -30,16 +30,18 @@ class FP16SafeCrossEntropy(torch.nn.Module):
     This avoids overflow in the softmax by doing the operation in FP32.
     """
 
-    def __init__(self, ignore_index, reduction='none'):
+    def __init__(self, ignore_index=-100, reduction='none'):
+        # default ignore_index=-100 mimics pytorch's default in
+        # torch.nn.functional.nll_loss
         super().__init__()
-        self.NULL_IDX = ignore_index
+        self.ignore_index = ignore_index
         self.reduction = reduction
 
     def forward(self, scores, targets):
         return F.nll_loss(
             F.log_softmax(scores, 1, dtype=torch.float32),
             targets,
-            ignore_index=self.NULL_IDX,
+            ignore_index=self.ignore_index,
             reduction=self.reduction,
         )
 
@@ -401,6 +403,13 @@ class MemoryEfficientFP16Optimizer(torch.optim.Optimizer):
             if k in id_map:
                 param = id_map[k]
                 self.optimizer.state[param] = v
+
+    @property
+    def loss_scale(self):
+        """
+        Convenience function which TorchAgent calls to get current scale value.
+        """
+        return self.scaler.loss_scale
 
     def zero_grad(self):
         """

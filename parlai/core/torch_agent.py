@@ -35,6 +35,7 @@ from parlai.utils.thread import SharedTable
 from parlai.core.dict import DictionaryAgent
 from parlai.nn.lr_scheduler import ParlAILRScheduler
 from parlai.core.message import Message
+from parlai.utils.distributed import is_distributed
 from parlai.utils.misc import AttrDict, warn_once
 from parlai.utils.fp16 import (
     fp16_apex_available,
@@ -43,7 +44,13 @@ from parlai.utils.fp16 import (
     MemoryEfficientFP16Adam,
     Adafactor,
 )
-from parlai.core.metrics import Metrics, Metric, AverageMetric, SumMetric, FixedMetric
+from parlai.core.metrics import (
+    Metrics,
+    Metric,
+    GlobalAverageMetric,
+    GlobalSumMetric,
+    GlobalFixedMetric,
+)
 from parlai.utils.distributed import is_primary_worker
 from parlai.utils.torch import argsort, padded_tensor
 
@@ -188,6 +195,9 @@ class History(object):
         self.delimiter_tok = self.parse(self.delimiter)
         self.size = size
         self.split_on_newln = opt.get('split_lines', False)
+        self._global_end_token = opt.get('history_add_global_end_token', None)
+        if self._global_end_token is not None:
+            self._global_end_token = self.dict[self.dict.end_token]
 
         # set up history objects
         if vec_type != 'deque' and vec_type != 'list':
@@ -292,6 +302,8 @@ class History(object):
                 history.extend(vec)
                 history.extend(self.delimiter_tok)
             history.extend(self.history_vecs[-1])
+            if self._global_end_token is not None:
+                history.extend([self._global_end_token])
         else:
             # vec type is a list
             history = []
@@ -299,7 +311,8 @@ class History(object):
                 history += vec
                 history += self.delimiter_tok
             history += self.history_vecs[-1]
-
+            if self._global_end_token is not None:
+                history += [self._global_end_token]
         return history
 
     def get_history_vec_list(self):
@@ -607,6 +620,14 @@ class TorchAgent(ABC, Agent):
             default='\n',
             help='Join history lines with this token, defaults to newline',
         )
+        agent.add_argument(
+            '--history-add-global-end-token',
+            type='nonestr',
+            default=None,
+            hidden=True,
+            choices=[None, 'end'],
+            help='Add special token to the end of history encoding.',
+        )
         # GPU arguments
         # these gpu options are all mutually exclusive, and should error if the
         # user tries to present multiple of them
@@ -722,7 +743,7 @@ class TorchAgent(ABC, Agent):
         self.rank_candidates = opt['rank_candidates']
         self.add_person_tokens = opt.get('person_tokens', False)
         # set interactive mode or not according to options.
-        self.set_interactive_mode(opt['interactive_mode'], shared)
+        self.set_interactive_mode(opt.get('interactive_mode', False), shared)
 
     def build_history(self):
         """
@@ -998,15 +1019,17 @@ class TorchAgent(ABC, Agent):
 
         # only report LR if we have a scheduler
         if hasattr(self, 'scheduler') and self.scheduler is not None:
-            report['lr'] = AverageMetric(self.optimizer.param_groups[0]['lr'])
+            report['lr'] = GlobalAverageMetric(self.optimizer.param_groups[0]['lr'])
 
         if self.use_cuda:
-            report['gpu_mem_percent'] = AverageMetric(self._gpu_usage())
+            report['gpu_mem'] = GlobalAverageMetric(self._gpu_usage())
 
         if is_primary_worker() and self._number_training_updates:
             # number train updates doesn't work in hogwild sadly, and should only
             # be done on the primary worker
-            report['total_train_updates'] = FixedMetric(self._number_training_updates)
+            report['total_train_updates'] = GlobalFixedMetric(
+                self._number_training_updates
+            )
 
         return report
 
@@ -1838,12 +1861,11 @@ class TorchAgent(ABC, Agent):
             # tokens per batch
             # we divide by the binary is_primary_worker() so that the numerator is
             # num_tokens in all workers, and the denominator is 1.
-            tbp = AverageMetric(
-                (batch.label_vec != self.NULL_IDX).sum().item()
-                + (batch.text_vec != self.NULL_IDX).sum().item(),
+            tpb = GlobalAverageMetric(
+                (batch.label_vec != self.NULL_IDX).sum().item(),
                 float(is_primary_worker()),
             )
-            self.global_metrics.add('tokens_per_batch', tbp)
+            self.global_metrics.add('tpb', tpb)
 
         if self.is_training:
             output = self.train_step(batch)
@@ -1903,9 +1925,23 @@ class TorchAgent(ABC, Agent):
         It is recommended you use this instead of loss.backward(), for integration with
         distributed training and FP16 training.
         """
-        if self.opt.get('update_freq', 1) > 1:
+        update_freq = self.opt.get('update_freq', 1)
+
+        if update_freq > 1:
             # gradient accumulation, but still need to average across the minibatches
-            loss = loss / self.opt['update_freq']
+            loss = loss / update_freq
+            self._number_grad_accum = (self._number_grad_accum + 1) % update_freq
+
+            # we're doing gradient accumulation, so we don't need to sync gradients
+            # amoung GPUs
+            if self._number_grad_accum != 0 and is_distributed():
+                # accumulate without syncing
+                with self.model.no_sync():
+                    if self.fp16:
+                        self.optimizer.backward(loss, update_master_grads=False)
+                    else:
+                        loss.backward()
+                return
 
         if self.fp16:
             self.optimizer.backward(loss, update_master_grads=False)
@@ -1926,7 +1962,7 @@ class TorchAgent(ABC, Agent):
         if update_freq > 1:
             # we're doing gradient accumulation, so we don't only want to step
             # every N updates instead
-            self._number_grad_accum = (self._number_grad_accum + 1) % update_freq
+            # self._number_grad_accum is updated in backward function
             if self._number_grad_accum != 0:
                 return
 
@@ -1942,19 +1978,25 @@ class TorchAgent(ABC, Agent):
                 grad_norm = torch.nn.utils.clip_grad_norm_(
                     self.model.parameters(), self.opt['gradient_clip']
                 )
-            self.global_metrics.add('gnorm', AverageMetric(grad_norm))
+            self.global_metrics.add('gnorm', GlobalAverageMetric(grad_norm))
             self.global_metrics.add(
-                'clip', AverageMetric(float(grad_norm > self.opt['gradient_clip']))
+                'clip',
+                GlobalAverageMetric(float(grad_norm > self.opt['gradient_clip'])),
+            )
+        if self.fp16:
+            self.global_metrics.add(
+                'fp16_loss_scalar', GlobalAverageMetric(self.optimizer.loss_scale)
             )
 
         self.optimizer.step()
 
         # keep track up number of steps, compute warmup factor
         self._number_training_updates += 1
+
+        # in distributed mode, all workers step together, but we need to only
+        # count it once. Only the primary worker gets to make the count
         if is_primary_worker():
-            # in distributed mode, all workers step together, but we need to only
-            # count it once. Only the primary worker gets to make the count
-            self.global_metrics.add('updates', SumMetric(1))
+            self.global_metrics.add('updates', GlobalSumMetric(1))
 
         if getattr(self, 'scheduler', None):
             self.scheduler.step(self._number_training_updates)
