@@ -955,7 +955,7 @@ class MTurkManager:
             # No frontend dir exists
             pass
 
-    def setup_server(self, task_directory_path=None):
+    def setup_server(self, task_directory_path=None, task_name=None, exists=False):
         """
         Prepare the MTurk server for the new HIT we would like to submit.
         """
@@ -1090,7 +1090,8 @@ class MTurkManager:
         )
 
         # Setup the server with a likely-unique app-name
-        task_name = '{}-{}'.format(str(uuid.uuid4())[:8], self.opt['task'])
+        if not exists:
+            task_name = '{}-{}'.format(str(uuid.uuid4())[:8], self.opt['task'])
         self.server_task_name = ''.join(
             e for e in task_name.lower() if e.isalnum() or e == '-'
         )

@@ -139,3 +139,5 @@ heroku-cli-*
 
 # mypy cache
 .mypy_cache
+
+dat/

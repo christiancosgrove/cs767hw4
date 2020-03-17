@@ -582,14 +582,16 @@ class DictionaryAgent(Agent):
         if self.lower:
             text = text.lower()
 
-        # calls the selected tokenizer function e.g. 're' => re_tokenize(text)
-        word_tokens = self.tokenizer_fun(text)
+        return text.split(' ')
 
-        if not building and self.max_ngram_size > 1:
-            # search for ngrams during parse-time
-            # TODO(ahm): support build-time ngrams using word2vec heuristic?
-            word_tokens = find_ngrams(self.tok2ind, word_tokens, self.max_ngram_size)
-        return word_tokens
+        # # calls the selected tokenizer function e.g. 're' => re_tokenize(text)
+        # word_tokens = self.tokenizer_fun(text)
+
+        # if not building and self.max_ngram_size > 1:
+        #     # search for ngrams during parse-time
+        #     # TODO(ahm): support build-time ngrams using word2vec heuristic?
+        #     word_tokens = find_ngrams(self.tok2ind, word_tokens, self.max_ngram_size)
+        # return word_tokens
 
     def bpe_tokenize(self, text):
         """
