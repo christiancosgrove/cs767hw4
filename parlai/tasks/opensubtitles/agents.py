@@ -124,19 +124,54 @@ class Task10kTeacher(HalfTeacher):
             if cnt >= 10000:
                 break
 
+def get_trigrams(s):
+    words = s.split()
+    for i in range(len(words) - 2):
+        yield ' '.join(words[i:i+3])    
 
-class TaskDialoGPTFiltering(HalfTeacher):
+from collections import Counter
+from tqdm import tqdm
+class TaskDialoGPTFilteringTeacher(HalfTeacher):
     """
     This version of opensubtitles only includes 10,000 dialogs.
     """
 
     def setup_data(self, path):
         cnt = 0
-        for entry, new in super().setup_data(path):
-            print('entry', entry)
+
+        # Get trigrams
+        trigrams = Counter()
+        for entry, new in tqdm(super().setup_data(path)):
+            for t in get_trigrams(entry[0]):
+                trigrams[t]+=1
+            if len(entry) > 1 and entry[1]:
+                for t in get_trigrams(entry[1][0]):
+                    trigrams[t]+=1
+            if cnt > 100000:
+                break
+            cnt+=1
+
+
+        for entry, new in tqdm(super().setup_data(path)):
             if len(entry) > 1 and entry[1]:
                 # focus on examples with targets for small set
-                yield entry, new
+                
+                # Perform trigram filtering to remove 'I don't know' 
+                excluded = False
+
+                for t in get_trigrams(entry[0]):
+                    if trigrams[t] > 500:
+                        excluded = True
+                        break
+                for t in get_trigrams(entry[1][0]):
+                    if trigrams[t] > 500:
+                        excluded = True
+                        break
+
+                if not excluded:
+                    yield entry, new
+                else:
+                    continue
             cnt += 1
             if cnt >= 10000:
                 break
