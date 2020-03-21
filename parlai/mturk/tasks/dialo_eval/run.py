@@ -22,7 +22,7 @@ def main():
     from parlai.agents.transformer.transformer import TransformerGeneratorAgent
     from parlai.agents.ir_baseline.ir_baseline import IrBaselineAgent
 
-    IrBaselineAgent.add_cmdline_args(argparser)
+    TransformerGeneratorAgent.add_cmdline_args(argparser)
     opt = argparser.parse_args()
     opt['task'] = os.path.basename(os.path.dirname(os.path.abspath(__file__)))
     opt.update(task_config)
@@ -32,6 +32,7 @@ def main():
     task_opt['datatype'] = 'test'
     task_opt['datapath'] = opt['datapath']
     task_opt['task'] = 'dailydialog:NoStart'
+    task_opt['model_file'] = '~/cs767hw4/models/test.checkpoint'
 
     mturk_agent_id = 'Worker'
     mturk_manager = MTurkManager(opt=opt, mturk_agent_ids=[mturk_agent_id])
@@ -61,7 +62,7 @@ def main():
         def run_conversation(mturk_manager, opt, workers):
             mturk_agent = workers[0]
 
-            model_agent = IrBaselineAgent(opt=opt)
+            model_agent = TransformerGeneratorAgent(opt=opt)
 
             world = ModelEvaluatorWorld(
                 opt=opt,
