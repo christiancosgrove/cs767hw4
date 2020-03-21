@@ -134,7 +134,7 @@ from tqdm import tqdm
 import pickle
 class TaskDialoGPTFilteringTeacher(HalfTeacher):
     """
-    This version of opensubtitles only includes 10,000 dialogs.
+    This version of OpenSubtitles employs filtering as in this paper https://arxiv.org/abs/1911.00536
     """
 
     def setup_data(self, path):
@@ -152,8 +152,8 @@ class TaskDialoGPTFilteringTeacher(HalfTeacher):
                 if len(entry) > 1 and entry[1]:
                     for t in get_trigrams(entry[1][0]):
                         trigrams[t]+=1
-                if cnt > 10000:
-                    break
+                # if cnt > 10000:
+                #     break
                 cnt+=1
             pickle.dump(trigrams, open('trigrams.pkl', 'wb'))
 
@@ -182,9 +182,16 @@ class TaskDialoGPTFilteringTeacher(HalfTeacher):
                 else:
                     continue
             cnt += 1
-            if cnt >= 10000:
-                break
+            # if cnt >= 10000:
+            #     break
 
+class TaskDialoGPTFilteringReverseTeacher(HalfTeacher):
+    """
+    Questions and answers are reversed--for MMI.
+    """
+    def setup_data(self, path):
+        for entry, new in super().setup_data(path):
+            yield (entry[1][0], [entry[0]]), new
 
 class V2009Teacher(FullTeacher):
     def __init__(self, opt, shared=None):
