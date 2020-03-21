@@ -20,8 +20,9 @@ def main():
 
     # The dialog model we want to evaluate
     from parlai.agents.transformer.transformer import TransformerGeneratorAgent
+    from parlai.agents.ir_baseline.ir_baseline import IrBaselineAgent
 
-    TransformerGeneratorAgent.add_cmdline_args(argparser)
+    IrBaselineAgent.add_cmdline_args(argparser)
     opt = argparser.parse_args()
     opt['task'] = os.path.basename(os.path.dirname(os.path.abspath(__file__)))
     opt.update(task_config)
@@ -60,7 +61,7 @@ def main():
         def run_conversation(mturk_manager, opt, workers):
             mturk_agent = workers[0]
 
-            model_agent = TransformerGeneratorAgent(opt=opt)
+            model_agent = IrBaselineAgent(opt=opt)
 
             world = ModelEvaluatorWorld(
                 opt=opt,
