@@ -1357,7 +1357,8 @@ class NucleusSampling(TreeSearch):
         return (hyp_ids, tok_ids, best_scores)
 
 
-from parlai.agents.transformer.transformer import TransformerGeneratorModel
+from parlai.agents.transformer.modules import TransformerGeneratorModel
+from parlai.core.dict import DictionaryAgent
 
 class MMISearch(TreeSearch): # TODO: allow custom reverse models. Right now the reverse model is hardcoded as a pretrained Transformer.
     """

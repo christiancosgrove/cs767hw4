@@ -131,6 +131,7 @@ def get_trigrams(s):
 
 from collections import Counter
 from tqdm import tqdm
+import pickle
 class TaskDialoGPTFilteringTeacher(HalfTeacher):
     """
     This version of opensubtitles only includes 10,000 dialogs.
@@ -141,15 +142,20 @@ class TaskDialoGPTFilteringTeacher(HalfTeacher):
 
         # Get trigrams
         trigrams = Counter()
-        for entry, new in tqdm(super().setup_data(path)):
-            for t in get_trigrams(entry[0]):
-                trigrams[t]+=1
-            if len(entry) > 1 and entry[1]:
-                for t in get_trigrams(entry[1][0]):
+
+        if os.path.exists('trigrams.pkl'):
+            trigrams = pickle.load(open('trigrams.pkl', 'rb'))
+        else:
+            for entry, new in tqdm(super().setup_data(path)):
+                for t in get_trigrams(entry[0]):
                     trigrams[t]+=1
-            if cnt > 100000:
-                break
-            cnt+=1
+                if len(entry) > 1 and entry[1]:
+                    for t in get_trigrams(entry[1][0]):
+                        trigrams[t]+=1
+                if cnt > 10000:
+                    break
+                cnt+=1
+            pickle.dump(trigrams, open('trigrams.pkl', 'wb'))
 
 
         for entry, new in tqdm(super().setup_data(path)):
@@ -158,6 +164,9 @@ class TaskDialoGPTFilteringTeacher(HalfTeacher):
                 
                 # Perform trigram filtering to remove 'I don't know' 
                 excluded = False
+
+                if entry[0].split()[-1] != '?':
+                    continue
 
                 for t in get_trigrams(entry[0]):
                     if trigrams[t] > 500:

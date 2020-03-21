@@ -332,6 +332,7 @@ def build(datapath, use_history):
 
     if not build_data.built(dpath, version_string=version):
         print('[building data: ' + dpath + ']')
+
         if build_data.built(dpath):
             # An older version exists, so remove these outdated files.
             build_data.remove_dir(dpath)

@@ -219,8 +219,6 @@ class History(object):
         """
         Tokenize text with the given dictionary.
         """
-        print('PARSING', text)
-        print(self.dict.txt2vec(text))
         return self.dict.txt2vec(text)
 
     def reset(self):
@@ -1201,7 +1199,6 @@ class TorchAgent(ABC, Agent):
         """
         Convert token indices to string of tokens.
         """
-        print('VECTORIZING WITH DICTIONARY', self.dict['<s>'])
         new_vec = []
         if hasattr(vec, 'cpu'):
             vec = vec.cpu()
@@ -1233,7 +1230,6 @@ class TorchAgent(ABC, Agent):
             Truncate from the left side (keep the rightmost tokens). You
             probably want this True for inputs, False for targets.
         """
-        print('VECTORIZING WITH DICTIONARY', self.dict['<s>'])
         vec = self.dict.txt2vec(text)
         vec = self._add_start_end_tokens(vec, add_start, add_end)
         vec = self._check_truncate(vec, truncate, truncate_left)
