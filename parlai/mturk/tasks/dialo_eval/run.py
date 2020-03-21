@@ -34,7 +34,7 @@ def main():
 
     mturk_agent_id = 'Worker'
     mturk_manager = MTurkManager(opt=opt, mturk_agent_ids=[mturk_agent_id])
-    mturk_manager.setup_server(task_name="dialogue-hw4-mturk-eval", exists=True)
+    mturk_manager.setup_server(task_name="dialo-mturk-eval", exists=True)
 
     try:
         mturk_manager.start_new_run()
