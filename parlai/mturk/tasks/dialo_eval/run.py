@@ -19,7 +19,7 @@ def main():
     argparser.add_mturk_args()
 
     # The dialog model we want to evaluate
-    from parlai.agents.transformer.generator import TransformerGeneratorAgent
+    from parlai.agents.transformer.transformer import TransformerGeneratorAgent
 
     TransformerGeneratorAgent.add_cmdline_args(argparser)
     opt = argparser.parse_args()
