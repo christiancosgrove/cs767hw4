@@ -324,7 +324,7 @@ class TorchGeneratorAgent(TorchAgent, ABC):
         )
         agent.add_argument(
             '--inference',
-            choices={'beam', 'greedy', 'topk', 'nucleus'},
+            choices={'beam', 'greedy', 'topk', 'nucleus', 'mmi'},
             default='greedy',
             help='Generation algorithm',
         )
@@ -795,6 +795,20 @@ class TorchGeneratorAgent(TorchAgent, ABC):
         elif method == 'nucleus':
             return NucleusSampling(
                 self.opt['topp'],
+                beam_size,
+                min_length=self.beam_min_length,
+                block_ngram=self.beam_block_ngram,
+                context_block_ngram=self.beam_context_block_ngram,
+                length_penalty=self.opt.get('beam_length_penalty', 0.65),
+                padding_token=self.NULL_IDX,
+                bos_token=self.START_IDX,
+                eos_token=self.END_IDX,
+                device=device,
+            )
+        elif method == 'mmi':
+            return MMISearch(
+                self.opt,
+                self.dict,
                 beam_size,
                 min_length=self.beam_min_length,
                 block_ngram=self.beam_block_ngram,
@@ -1360,39 +1374,16 @@ class NucleusSampling(TreeSearch):
 from parlai.agents.transformer.modules import TransformerGeneratorModel
 from parlai.core.dict import DictionaryAgent
 
-class MMISearch(TreeSearch): # TODO: allow custom reverse models. Right now the reverse model is hardcoded as a pretrained Transformer.
+class MMISearch(BeamSearch): # TODO: allow custom reverse models. Right now the reverse model is hardcoded as a pretrained Transformer.
     """
     MMI search.
     """
-    def __init__(self, *args, **kwargs):
+    def __init__(self, opt, dict_, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        opt = Opt(model_file='HARDCODE')
-        self.rev_dict = DictionaryAgent()
-        self.rev_dict.load('reversed.dict')
-        self.reverse_model = TransformerGeneratorModel(opt, self.rev_dict)
-
-    def select_paths(self, logprobs, prior_scores):
-        """
-        Select the next vocabulary item in these beams.
-        """
-        # if numel is 1, then this is the first time step, only one hyp is expanded
-        if prior_scores.numel() == 1:
-            logprobs = logprobs[0:1]
-
-        # beam search actually looks over all hypotheses together so we flatten
-        beam_scores = logprobs + prior_scores.unsqueeze(1).expand_as(logprobs)
-        flat_beam_scores = beam_scores.view(-1)
-        best_scores, best_idxs = torch.topk(flat_beam_scores, self.beam_size, dim=-1)
-        voc_size = logprobs.size(-1)
-
-        # get the backtracking hypothesis id as a multiple of full voc_sizes
-        hyp_ids = best_idxs / voc_size
-        # get the actual word id from residual of the same division
-        tok_ids = best_idxs % voc_size
-
-        return (hyp_ids, tok_ids, best_scores)
-
+        opt = Opt(opt)
+        opt['override']['model_file'] = 'models/test_rev.checkpoint'
+        self.reverse_model = TransformerGeneratorModel(opt, dict_).to('cuda')
 
     def get_rescored_finished(self, n_best=None):
         """
@@ -1411,9 +1402,11 @@ class MMISearch(TreeSearch): # TODO: allow custom reverse models. Right now the 
         """
 
         # Rerank here
+        # Compute sum of the log probabilities
 
-        # self.reverse_model(self.outputs[...], self.context)
-
+        out_transpose = torch.stack(self.outputs).T
+        q = [self.reverse_model(o.unsqueeze(0), ys=torch.tensor(self.context).unsqueeze(0).to('cuda'))[0] for o in out_transpose]
+        scores_out = [torch.sum(o) for o in q]
         # if we never actually finished, force one
         if not self.finished:
             self.outputs[-1][0] = self.eos
@@ -1426,16 +1419,18 @@ class MMISearch(TreeSearch): # TODO: allow custom reverse models. Right now the 
                 )
             )
 
+        lam = 0.9 # MMI reranking parameter
+
         rescored_finished = []
         for finished_item in self.finished:
             current_length = finished_item.timestep + 1
             # these weights are from Google NMT paper
-            length_penalty = math.pow((1 + current_length) / 6, self.length_penalty)
+            length_penalty = 1#math.pow((1 + current_length) / 6, self.length_penalty)
             rescored_finished.append(
                 _HypothesisTail(
                     timestep=finished_item.timestep,
                     hypid=finished_item.hypid,
-                    score=finished_item.score / length_penalty,
+                    score=finished_item.score / length_penalty - lam * scores_out[finished_item.hypid],
                     tokenid=finished_item.tokenid,
                 )
             )
