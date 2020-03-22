@@ -32,7 +32,11 @@ def main():
     task_opt['datatype'] = 'test'
     task_opt['datapath'] = opt['datapath']
     task_opt['task'] = 'dailydialog:NoStart'
-    task_opt['model_file'] = '~/cs767hw4/models/test.checkpoint'
+    opt['dict_file'] = '/home/christian/developer/cs767hw4/models/test.dict'
+    opt['model_file'] = '/home/christian/developer/cs767hw4/models/test_daily.checkpoint'
+    opt['truncate'] = 64
+    opt['inference'] = 'mmi'
+    opt['beam_size'] = 10
 
     mturk_agent_id = 'Worker'
     mturk_manager = MTurkManager(opt=opt, mturk_agent_ids=[mturk_agent_id])
