@@ -27,3 +27,7 @@ In our evaluations, we found that the finetuned model performed worse than the p
 
 MMI doesn't seem to improve the quality of responses. We think this is because something is wrong with our reverse model. The reverse model outputs very large logits for some tokens (like `-1e20`); this might be throwing things off. If we had more time, we would investigate the reverse model training and make sure it outputted reasonable log-probabilities.
 
+Samples from pretrained model (with MMI `lambda=0.1`).
+![img](https://raw.githubusercontent.com/christiancosgrove/cs767hw4/master/samp1.png)
+![img](https://raw.githubusercontent.com/christiancosgrove/cs767hw4/master/samp2.png)
+![img](https://raw.githubusercontent.com/christiancosgrove/cs767hw4/master/samp3.png)
