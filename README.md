@@ -31,3 +31,7 @@ Samples from pretrained model (with MMI `lambda=0.1`).
 ![img](https://raw.githubusercontent.com/christiancosgrove/cs767hw4/master/samp1.png)
 ![img](https://raw.githubusercontent.com/christiancosgrove/cs767hw4/master/samp2.png)
 ![img](https://raw.githubusercontent.com/christiancosgrove/cs767hw4/master/samp3.png)
+
+
+## Future directions
+It's possible that smarter data filtering could further improve responses. Perhaps extremely common 2-grams (in addition to common 3-grams) could be used to filter out "boring" responses from the dataset. Furthermore, one could add an inverse length penalty -- (i.e., penalize short responses rather than long responses in the reranking step.)
