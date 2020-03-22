@@ -36,7 +36,7 @@ def main():
     opt['model_file'] = '/home/christian/developer/cs767hw4/models/test.checkpoint'
     opt['truncate'] = 64
     opt['inference'] = 'mmi'
-    opt['beam_size'] = 10
+    opt['beam_size'] = 32
     opt['no_cuda'] = True
 
     mturk_agent_id = 'Worker'
