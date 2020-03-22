@@ -84,7 +84,7 @@ class Convai2Teacher(FixedDialogTeacher):
         shared['data'] = self.data
         return shared
 
-
+from random import randint
 class NoStartTeacher(Convai2Teacher):
     """
     Same as default teacher, but it doesn't contain __SILENCE__ entries.
@@ -103,6 +103,10 @@ class NoStartTeacher(Convai2Teacher):
         self.num_eps = len(self.all_eps)
 
     def get(self, episode_idx, entry_idx=0):
+
+        # Randomize which example we show
+        episode_idx = randint(0, len(self.all_eps) - 1)
+
         full_eps = self.all_eps[episode_idx]
         entries = full_eps['dialogue']
 

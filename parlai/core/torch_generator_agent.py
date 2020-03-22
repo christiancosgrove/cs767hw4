@@ -1383,7 +1383,10 @@ class MMISearch(BeamSearch): # TODO: allow custom reverse models. Right now the 
 
         opt = Opt(opt)
         opt['override']['model_file'] = 'models/test_rev.checkpoint'
-        self.reverse_model = TransformerGeneratorModel(opt, dict_).to('cuda')
+        self.use_cuda = not opt['no_cuda']
+        self.reverse_model = TransformerGeneratorModel(opt, dict_)
+        if self.use_cuda:
+            self.reverse_model = self.reverse_model.to('cuda')
 
     def get_rescored_finished(self, n_best=None):
         """
@@ -1405,7 +1408,10 @@ class MMISearch(BeamSearch): # TODO: allow custom reverse models. Right now the 
         # Compute sum of the log probabilities
 
         out_transpose = torch.stack(self.outputs).T
-        q = [self.reverse_model(o.unsqueeze(0), ys=torch.tensor(self.context).unsqueeze(0).to('cuda'))[0] for o in out_transpose]
+        if self.use_cuda:
+            q = [self.reverse_model(o.unsqueeze(0), ys=torch.tensor(self.context).unsqueeze(0).to('cuda'))[0] for o in out_transpose]
+        else:
+            q = [self.reverse_model(o.unsqueeze(0), ys=torch.tensor(self.context).unsqueeze(0))[0] for o in out_transpose]
         scores_out = [torch.sum(o) for o in q]
         # if we never actually finished, force one
         if not self.finished:
@@ -1419,18 +1425,18 @@ class MMISearch(BeamSearch): # TODO: allow custom reverse models. Right now the 
                 )
             )
 
-        lam = 0.9 # MMI reranking parameter
+        lam = 0.5 # MMI reranking parameter
 
         rescored_finished = []
         for finished_item in self.finished:
             current_length = finished_item.timestep + 1
             # these weights are from Google NMT paper
-            length_penalty = 1#math.pow((1 + current_length) / 6, self.length_penalty)
+            length_penalty = math.pow((1 + current_length) / 6, self.length_penalty)
             rescored_finished.append(
                 _HypothesisTail(
                     timestep=finished_item.timestep,
                     hypid=finished_item.hypid,
-                    score=finished_item.score / length_penalty - lam * scores_out[finished_item.hypid],
+                    score=(finished_item.score - lam * scores_out[finished_item.hypid])/ length_penalty,
                     tokenid=finished_item.tokenid,
                 )
             )
